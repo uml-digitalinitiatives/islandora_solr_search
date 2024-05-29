@@ -302,7 +302,7 @@ class Apache_Solr_Document implements IteratorAggregate
 	 * }
 	 * </code>
 	 */
-	public function getIterator()
+	public function getIterator(): Traversable
 	{
 		$arrayObject = new ArrayObject($this->_fields);
 

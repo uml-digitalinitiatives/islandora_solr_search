@@ -328,13 +328,21 @@ class Apache_Solr_Service
 			// use the default timeout pulled from default_socket_timeout otherwise
 			stream_context_set_option($this->_getContext, 'http', 'timeout', $this->_defaultTimeout);
 		}
+    $curl_timeout = ($timeout !== FALSE && $timeout > 0.0) ? (int)$timeout : $this->_defaultTimeout;
 
 		// Islandora: dump solr query address in debug mode
 		if (variable_get('islandora_solr_debug_mode', 0) && user_access('view islandora solr debug')) {
                   drupal_set_message(l('solr query',$url."&indent=on&debugQuery=true"));
                 }
 		//$http_response_header is set by file_get_contents
-		$response = new Apache_Solr_Response(@file_get_contents($url, false, $this->_getContext), @$http_response_header, $this->_createDocuments, $this->_collapseSingleValueArrays);
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $curl_timeout);
+    $curl_response = curl_exec($ch);
+    $http_response_header = curl_getinfo($ch);
+    curl_close($ch);
+    $response = new Apache_Solr_Response($curl_response, $http_response_header, $this->_createDocuments, $this->_collapseSingleValueArrays);
+		#$response = new Apache_Solr_Response(@file_get_contents($url, false, $this->_getContext), @$http_response_header, $this->_createDocuments, $this->_collapseSingleValueArrays);
 
 		if ($response->getHttpStatus() != 200)
 		{
@@ -383,9 +391,21 @@ class Apache_Solr_Service
 
 			stream_context_set_option($this->_postContext, 'http', 'timeout', $timeout);
 		}
+    $curl_timeout = ($timeout !== FALSE && $timeout > 0.0) ? (int)$timeout : $this->_defaultTimeout;
 
-		//$http_response_header is set by file_get_contents
-		$response = new Apache_Solr_Response(@file_get_contents($url, false, $this->_postContext), $http_response_header, $this->_createDocuments, $this->_collapseSingleValueArrays);
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $curl_timeout);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $rawPost);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: $contentType"]);
+    $curl_response = curl_exec($ch);
+    $http_response_header = curl_getinfo($ch);
+    curl_close($ch);
+    $response = new Apache_Solr_Response($curl_response, $http_response_header, $this->_createDocuments, $this->_collapseSingleValueArrays);
+
+    //$http_response_header is set by file_get_contents
+		#$response = new Apache_Solr_Response(@file_get_contents($url, false, $this->_postContext), $http_response_header, $this->_createDocuments, $this->_collapseSingleValueArrays);
 
 		if ($response->getHttpStatus() != 200)
 		{
@@ -617,8 +637,15 @@ class Apache_Solr_Service
 			)
 		);
 
+    $ch = curl_init($this->_pingUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_NOBODY, true);
+    curl_exec($ch);
+    $status_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		// attempt a HEAD request to the solr ping page
-		$ping = @file_get_contents($this->_pingUrl, false, $context);
+		//$ping = @file_get_contents($this->_pingUrl, false, $context);
+    $ping = $status_code == 200;
 
 		// result is false if there was a timeout
 		// or if the HTTP status was not 200
@@ -958,7 +985,7 @@ class Apache_Solr_Service
 
 		// use http_build_query to encode our arguments because its faster
 		// than urlencoding all the parts ourselves in a loop
-		$queryString = http_build_query($params, null, $this->_queryStringDelimiter);
+		$queryString = http_build_query($params, "", $this->_queryStringDelimiter);
 
 		// because http_build_query treats arrays differently than we want to, correct the query
 		// string by changing foo[#]=bar (# being an actual number) parameter strings to just

@@ -114,51 +114,69 @@ class Apache_Solr_Response
 		//iterate through headers for real status, type, and encoding
 		if (is_array($httpHeaders) && count($httpHeaders) > 0)
 		{
-			//look at the first headers for the HTTP status code
-			//and message (errors are usually returned this way)
-			//
-			//HTTP 100 Continue response can also be returned before
-			//the REAL status header, so we need look until we find
-			//the last header starting with HTTP
-			//
-			//the spec: http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.1
-			//
-			//Thanks to Daniel Andersson for pointing out this oversight
-			while (isset($httpHeaders[0]) && substr($httpHeaders[0], 0, 4) == 'HTTP')
-			{
-				$parts = explode(' ', substr($httpHeaders[0], 9), 2);
+      if (isset($httpHeaders['http_code'])) {
+        $status = $httpHeaders['http_code'];
+        $statusMessage = "cURL does not return a message for status codes";
+      }
+      else {
+        //look at the first headers for the HTTP status code
+        //and message (errors are usually returned this way)
+        //
+        //HTTP 100 Continue response can also be returned before
+        //the REAL status header, so we need look until we find
+        //the last header starting with HTTP
+        //
+        //the spec: http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.1
+        //
+        //Thanks to Daniel Andersson for pointing out this oversight
+        while (isset($httpHeaders[0]) && substr($httpHeaders[0], 0, 4) == 'HTTP') {
+          $parts = explode(' ', substr($httpHeaders[0], 9), 2);
 
-				$status = $parts[0];
-				$statusMessage = trim($parts[1]);
+          $status = $parts[0];
+          $statusMessage = trim($parts[1]);
 
-				array_shift($httpHeaders);
-			}
+          array_shift($httpHeaders);
+        }
+      }
 
-			//Look for the Content-Type response header and determine type
-			//and encoding from it (if possible - such as 'Content-Type: text/plain; charset=UTF-8')
-			foreach ($httpHeaders as $header)
-			{
-				if (strncasecmp($header, 'Content-Type:', 13) == 0)
-				{
-					//split content type value into two parts if possible
-					$parts = explode(';', substr($header, 13), 2);
+      if (isset($httpHeaders['content_type'])) {
+        $parts = explode(';', $httpHeaders['content_type'], 2);
+        $type = trim($parts[0]);
 
-					$type = trim($parts[0]);
+        if ($parts[1])
+        {
+          //split the encoding section again to get the value
+          $parts = explode('=', $parts[1], 2);
 
-					if ($parts[1])
-					{
-						//split the encoding section again to get the value
-						$parts = explode('=', $parts[1], 2);
+          if ($parts[1])
+          {
+            $encoding = trim($parts[1]);
+          }
+        }
+      }
+      else {
+        //Look for the Content-Type response header and determine type
+        //and encoding from it (if possible - such as 'Content-Type: text/plain; charset=UTF-8')
+        foreach ($httpHeaders as $header) {
+          if (strncasecmp($header, 'Content-Type:', 13) == 0) {
+            //split content type value into two parts if possible
+            $parts = explode(';', substr($header, 13), 2);
 
-						if ($parts[1])
-						{
-							$encoding = trim($parts[1]);
-						}
-					}
+            $type = trim($parts[0]);
 
-					break;
-				}
-			}
+            if ($parts[1]) {
+              //split the encoding section again to get the value
+              $parts = explode('=', $parts[1], 2);
+
+              if ($parts[1]) {
+                $encoding = trim($parts[1]);
+              }
+            }
+
+            break;
+          }
+        }
+      }
 		}
 
 		$this->_rawResponse = $rawResponse;
