@@ -59,7 +59,15 @@ function islandora_solr_compound_object_query($pid) {
 
   $relationship = variable_get('islandora_solr_compound_relationship_field', 'RELS_EXT_isConstituentOf_uri_ms');
   $sequence_pattern = variable_get('islandora_solr_compound_sequence_pattern', 'RELS_EXT_isSequenceNumberOf%PID%_literal_ms');
-  $sequence_pattern = str_replace('%PID%', str_replace(':', '_', $pid), $sequence_pattern);
+
+  if (str_contains($sequence_pattern, ';')) {
+    $sequence_patterns = explode(';', $sequence_pattern);
+  } else {
+    $sequence_patterns = [$sequence_pattern];
+  }
+  array_walk($sequence_patterns, function(&$value) use ($pid) {
+    $value = str_replace('%PID%', str_replace(':', '_', $pid), $value);
+  });
 
   $query = format_string('!field:("!pid"+OR+"info:fedora/!pid")', array(
     '!field' => $relationship,
@@ -100,40 +108,63 @@ function islandora_solr_compound_object_query($pid) {
   } while ($total > (($start * $rows) + $rows));
 
   if (count($constituents) > 0) {
-    $sort = function($a, $b) use($sequence_pattern) {
-      $a = $a['solr_doc'][$sequence_pattern];
-      if (is_array($a)) {
-        $a = reset($a);
-      }
-      $a = intval($a);
-      $b = $b['solr_doc'][$sequence_pattern];
-      if (is_array($b)) {
-        $b = reset($b);
-      }
-      $b = intval($b);
+    $sort = function($a, $b) use($sequence_patterns) {
+      foreach ($sequence_patterns as $sequence_pattern) {
+        if (
+          !array_key_exists('solr_doc', $a) ||
+          !array_key_exists('solr_doc', $b)
+        ) {
+          return 0; // No sorting.
+        }
+        if (array_key_exists($sequence_pattern, $a['solr_doc'])) {
+          $a = $a['solr_doc'][$sequence_pattern];
+        }
+        if (array_key_exists($sequence_pattern, $b['solr_doc'])) {
+          $b = $b['solr_doc'][$sequence_pattern];
+        }
+        if (isset($a) && isset($b)) {
+          if (is_array($a)) {
+            $a = reset($a);
+          }
+          $a = intval($a);
 
-      if ($a === $b) {
-        return 0;
+          if (is_array($b)) {
+            $b = reset($b);
+          }
+          $b = intval($b);
+
+          if ($a === $b) {
+            return 0;
+          }
+          if (empty($a)) {
+            return 1;
+          }
+          if (empty($b)) {
+            return -1;
+          }
+          return $a - $b;
+        }
       }
-      if (empty($a)) {
-        return 1;
-      }
-      if (empty($b)) {
-        return -1;
-      }
-      return $a - $b;
+      return 0;
     };
     uasort($constituents, $sort);
 
     foreach ($constituents as $result) {
-      $sequence = $result['solr_doc'][$sequence_pattern];
-      if (is_array($sequence)) {
-        $sequence = reset($sequence);
+      if (array_key_exists('solr_doc', $result)) {
+        foreach ($sequence_patterns as $sequence_pattern) {
+          if (array_key_exists($sequence_pattern, $result['solr_doc'])) {
+            $sequence = $result['solr_doc'][$sequence_pattern];
+            if (is_array($sequence)) {
+              $sequence = reset($sequence);
+            }
+            break;
+          }
+        }
       }
       $output[$result['PID']] = array(
         'pid' => $result['PID'],
         'title' => $result['object_label'],
-        'seq' => $sequence,
+        'seq' => $sequence ?? 0,
       );
     }
   }
