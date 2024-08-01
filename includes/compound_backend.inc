@@ -68,6 +68,7 @@ function islandora_solr_compound_object_query($pid) {
   array_walk($sequence_patterns, function(&$value) use ($pid) {
     $value = str_replace('%PID%', str_replace(':', '_', $pid), $value);
   });
+  $sequence_pattern = implode(', ', $sequence_patterns);
 
   $query = format_string('!field:("!pid"+OR+"info:fedora/!pid")', array(
     '!field' => $relationship,
@@ -109,43 +110,31 @@ function islandora_solr_compound_object_query($pid) {
 
   if (count($constituents) > 0) {
     $sort = function($a, $b) use($sequence_patterns) {
-      foreach ($sequence_patterns as $sequence_pattern) {
-        if (
-          !array_key_exists('solr_doc', $a) ||
-          !array_key_exists('solr_doc', $b)
-        ) {
-          return 0; // No sorting.
+      $getSequence = function($a) use ($sequence_patterns) {
+        foreach ($sequence_patterns as $pattern) {
+          if (!array_key_exists('solr_doc', $a)) {
+            continue;
+          }
+          if (array_key_exists($pattern, $a['solr_doc'])) {
+            $value = $a['solr_doc'][$pattern];
+            if (is_array($value)) {
+              $value = reset($value);
+            }
+            return intval($value);
+          }
         }
-        if (array_key_exists($sequence_pattern, $a['solr_doc'])) {
-          $a = $a['solr_doc'][$sequence_pattern];
-        }
-        if (array_key_exists($sequence_pattern, $b['solr_doc'])) {
-          $b = $b['solr_doc'][$sequence_pattern];
-        }
-        if (isset($a) && isset($b)) {
-          if (is_array($a)) {
-            $a = reset($a);
-          }
-          $a = intval($a);
-
-          if (is_array($b)) {
-            $b = reset($b);
-          }
-          $b = intval($b);
-
-          if ($a === $b) {
-            return 0;
-          }
-          if (empty($a)) {
-            return 1;
-          }
-          if (empty($b)) {
-            return -1;
-          }
-          return $a - $b;
-        }
+        return null;
+      };
+      $aValue = $getSequence($a);
+      $bValue = $getSequence($b);
+      if (is_null($aValue) || is_null($bValue)) {
+        return 0; // no sorting
+      } else if (empty($aValue)) {
+        return 1;
+      } else if (empty($bValue)) {
+        return -1;
       }
-      return 0;
+      return $aValue - $bValue;
     };
     uasort($constituents, $sort);
 
